@@ -14,6 +14,19 @@ import { useAuth } from '@/hooks/useAuth';
 import { useCart } from '@/hooks/useCart';
 import { supabase } from '@/integrations/supabase/client';
 
+interface CreatePreferencePayload {
+  order_id: string;
+  items: {
+    title: string;
+    quantity: number;
+    unit_price: number;
+  }[];
+  payer: {
+    name?: string;
+    email: string;
+  };
+}
+
 const CheckoutPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -100,9 +113,17 @@ const CheckoutPage = () => {
       if (orderError) {
         throw orderError;
       }
+      interface OrderItem{
+        order_id: string;
+        product_id: string;
+        product_name: string;
+        product_price: number;
+        quantity: number;
+        subtotal: number;
+      }
 
       // Create order items
-      const orderItems = cartItems.map((item: any) => ({
+      const orderItems:OrderItem[] = cartItems.map((item: any) => ({
         order_id: order.id,
         product_id: item.id,
         product_name: item.name,
@@ -110,6 +131,31 @@ const CheckoutPage = () => {
         quantity: item.quantity,
         subtotal: item.price * item.quantity
       }));
+
+      const payload: CreatePreferencePayload = {
+        order_id: order.id,
+        items: orderItems.map((item) => ({
+          title: item.product_name,
+          quantity: item.quantity,
+          unit_price: item.product_price
+        })),
+        payer: {
+          name: customerData.name,
+          email: customerData.email
+        }
+      }
+
+      const {data, error} = await supabase.functions.invoke('create-payment-preference', {
+        body: payload
+      })
+      console.log(data)
+      console.log(error)
+      // const jsonData = JSON.parse(data)
+
+
+      if(error){
+        throw error
+      }
 
       const { error: itemsError } = await supabase
         .from('order_items')
@@ -120,23 +166,23 @@ const CheckoutPage = () => {
       }
 
       // Send confirmation email
-      try {
-        const { error: emailError } = await supabase.functions.invoke('send-order-confirmation', {
-          body: {
-            orderId: order.id,
-            customerEmail: customerData.email,
-            customerName: customerData.name
-          }
-        });
+      // try {
+      //   const { error: emailError } = await supabase.functions.invoke('send-order-confirmation', {
+      //     body: {
+      //       orderId: order.id,
+      //       customerEmail: customerData.email,
+      //       customerName: customerData.name
+      //     }
+      //   });
 
-        if (emailError) {
-          console.error('Error sending confirmation email:', emailError);
-          // Don't throw error for email - order was still created successfully
-        }
-      } catch (emailError) {
-        console.error('Error sending confirmation email:', emailError);
-        // Continue with success flow even if email fails
-      }
+      //   if (emailError) {
+      //     console.error('Error sending confirmation email:', emailError);
+      //     // Don't throw error for email - order was still created successfully
+      //   }
+      // } catch (emailError) {
+      //   console.error('Error sending confirmation email:', emailError);
+      //   // Continue with success flow even if email fails
+      // }
 
       // Clear cart
       await clearCart();
@@ -147,7 +193,7 @@ const CheckoutPage = () => {
       });
 
       // Redirect to success page or orders page
-      navigate('/', { replace: true });
+      window.location.href = data.checkoutUrl;
       
     } catch (error) {
       console.error('Error creating order:', error);
